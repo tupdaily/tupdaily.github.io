@@ -557,7 +557,7 @@ blended = np.clip(np.sum(combined, axis=0), 0, 1)</code></pre>
             </div>
 
             <h3>Jersey Swap: LeBron in a Spurs Jersey</h3>
-            <p>For an irregular mask, I put De'Aaron Fox's Spurs jersey on LeBron. I aligned the two photos with the same
+            <p>For an irregular mask, I put Keldon Johnson's Spurs jersey on LeBron. I aligned the two photos with the same
                 two-point alignment from the hybrid images, then built the jersey mask automatically in HSV space: pixels with
                 a blue hue and enough saturation are kept, small holes are filled with morphological closing, and only the
                 largest connected region is kept. I click once on LeBron's waist to cut the mask off below the jersey, then
@@ -577,7 +577,7 @@ mask = labels == (np.argmax(sizes) + 1)</code></pre>
                 </figure>
                 <figure>
                     <img src="images/proj2/blend/fox_aligned.png" alt="">
-                    <figcaption>Fox (aligned)</figcaption>
+                    <figcaption>Keldon Johnson (aligned)</figcaption>
                 </figure>
                 <figure>
                     <img src="images/proj2/blend/jersey_mask.png" alt="">
@@ -594,7 +594,7 @@ mask = labels == (np.argmax(sizes) + 1)</code></pre>
             <div class="project-images narrow stack">
                 <figure>
                     <img src="images/proj2/blend/lebron_stack.jpg" alt="">
-                    <figcaption>Left: masked Fox, middle: masked LeBron, right: combined</figcaption>
+                    <figcaption>Left: masked Keldon Johnson, middle: masked LeBron, right: combined</figcaption>
                 </figure>
             </div>
 

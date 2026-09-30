@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://kit.fontawesome.com/b54f1aa8bf.js" crossorigin="anonymous"></script>
 </head>
-<body>
+<body class="capped">
 
 <div id="cs180-header">
     <div class="container">
@@ -549,7 +549,7 @@ blended = np.clip(np.sum(combined, axis=0), 0, 1)</code></pre>
             </div>
             <p>The figure below recreates Figure 3.42 from Szeliski: each row is a level of the stack, with the masked apple on
                 the left, the masked orange in the middle, and their sum on the right. The last row sums every level.</p>
-            <div class="project-images narrow">
+            <div class="project-images narrow stack">
                 <figure>
                     <img src="images/proj2/blend/oraple_stack.jpg" alt="">
                     <figcaption>Masked Laplacian stacks for the oraple</figcaption>
@@ -591,7 +591,7 @@ mask = labels == (np.argmax(sizes) + 1)</code></pre>
                 </figure>
             </div>
             <p>The Laplacian stacks of the masked inputs for this blend:</p>
-            <div class="project-images narrow">
+            <div class="project-images narrow stack">
                 <figure>
                     <img src="images/proj2/blend/lebron_stack.jpg" alt="">
                     <figcaption>Left: masked Fox, middle: masked LeBron, right: combined</figcaption>
@@ -623,7 +623,7 @@ mask = labels == (np.argmax(sizes) + 1)</code></pre>
                     <figcaption>Result: a soccer ball through the hoop</figcaption>
                 </figure>
             </div>
-            <div class="project-images narrow">
+            <div class="project-images narrow stack">
                 <figure>
                     <img src="images/proj2/blend/ball_stack.jpg" alt="">
                     <figcaption>Left: masked soccer ball, middle: masked basketball, right: combined</figcaption>

@@ -511,6 +511,19 @@ nav .fa-solid{
 .project-images.narrow{
     width: 50%;
 }
+/* Pages with many tall images: cap height so portrait-shaped images don't dominate */
+.capped .project-images img{
+    width: auto;
+    max-width: 100%;
+    max-height: 380px;
+    margin: 0 auto;
+}
+.capped .project-images.compare{
+    width: 75%;
+}
+.capped .project-images.stack img{
+    max-height: 720px;
+}
 .project-section h3{
     font-size: 24px;
     font-weight: 600;

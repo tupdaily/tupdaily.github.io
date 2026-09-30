@@ -24,8 +24,625 @@
 <div id="cs180-content">
     <div class="container">
         <a href="cs180.html" class="btn">&larr; Back to Projects</a>
-        <h1 class="sub-title">Project 2: Title Here</h1>
-        <p class="intro">Coming soon.</p>
+        <h1 class="sub-title">Project 2: Fun with Filters and Frequencies!</h1>
+
+        <section class="project-section">
+            <h2>Overview</h2>
+            <p>This project explores what we can do with 2D convolutions and the frequency content of images. In Part 1, I
+                wrote convolution from scratch and used finite difference and derivative of Gaussian filters to detect edges.
+                In Part 2, I used low-pass and high-pass filters to sharpen images, build hybrid images that change depending on
+                viewing distance, and blend images together seamlessly using Gaussian and Laplacian stacks.</p>
+        </section>
+
+        <!-- ============================== PART 1.1 ============================== -->
+        <section class="project-section">
+            <h2>Part 1.1: Convolutions from Scratch</h2>
+            <p>I first implemented convolution with four nested loops: two to slide over every output pixel and two to walk
+                over every entry of the kernel. Since convolution (unlike cross-correlation) flips the kernel, I index the kernel
+                backwards with <code>kernel[HK - 1 - k, WK - 1 - l]</code>. Zero padding of width <code>p</code> is added around
+                the image before convolving.</p>
+<pre><code>def conv_4loops(image, kernel, p = 0):
+    H, W = image.shape[:2]
+    HK, WK = kernel.shape[:2]
+    padded = np.zeros((H + 2*p, W + 2*p))
+    padded[p:p+H, p:p+W] = image
+
+    out_H = H+2*p-HK+1
+    out_W = W+2*p-WK+1
+    feature_map = np.zeros((out_H,out_W))
+
+    for i in range(out_H):
+        for j in range(out_W):
+            value = 0
+            for k in range(HK):
+                for l in range(WK):
+                    value += kernel[HK - 1 - k, WK - 1 - l] * padded[i+k][j+l]
+            feature_map[i, j] = value
+    return feature_map</code></pre>
+            <p>The two-loop version replaces the inner two loops with a single vectorized multiply-and-sum between the flipped
+                kernel and the image patch under it:</p>
+<pre><code>def conv_2loops(image, kernel, p = 0):
+    ...
+    for i in range(out_H):
+        for j in range(out_W):
+            feature_map[i, j] = np.sum(kernel[::-1, ::-1] * padded[i:i+HK, j:j+WK])
+    return feature_map</code></pre>
+
+            <h3>Runtime</h3>
+            <p>I timed all three implementations with a 9&times;9 box filter on a 252&times;189 downscaled version of my
+                portrait (the four-loop version is far too slow to run on the full 4032&times;3024 image in a reasonable time).</p>
+            <table class="results-table">
+                <tr><th>Implementation</th><th>Time</th></tr>
+                <tr><td>4 loops</td><td>0.5131 s</td></tr>
+                <tr><td>2 loops</td><td>0.0525 s</td></tr>
+                <tr><td><code>scipy.signal.convolve2d</code></td><td>0.0030 s</td></tr>
+            </table>
+            <p>Vectorizing the inner loops gives significant speedups, which is magnified in the scikit image processing library via
+                it's C backend.
+            </p>
+
+            <h3>Boundary handling</h3>
+            <p>The functions here use zero padding along the boundaries. This however, results in a border of darker pixels around the image.</p>
+
+            <h3>Results on my portrait</h3>
+            <p>I convolved a grayscale picture of myself with a 9&times;9 box filter and the finite difference operators
+                <code>D<sub>x</sub> = [1, 0, -1]</code> and <code>D<sub>y</sub> = [1, 0, -1]<sup>T</sup></code>. The
+                derivative images are shown as absolute values, scaled so the 99.5th percentile maps to white.</p>
+            <div class="project-images quad">
+                <figure>
+                    <img src="images/proj2/part1/self_portrait.jpg" alt="">
+                    <figcaption>Original</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/portrait_box.jpg" alt="">
+                    <figcaption>9&times;9 box filter</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/portrait_dx.jpg" alt="">
+                    <figcaption>|D<sub>x</sub>|</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/portrait_dy.jpg" alt="">
+                    <figcaption>|D<sub>y</sub>|</figcaption>
+                </figure>
+            </div>
+            <p>D<sub>x</sub> responds to vertical edges like the sides of my face and hair, while D<sub>y</sub> picks up
+                horizontal edges like my eyebrows, eyes, and mouth.</p>
+        </section>
+
+        <!-- ============================== PART 1.2 ============================== -->
+        <section class="project-section">
+            <h2>Part 1.2: Finite Difference Operator</h2>
+            <p>Convolving the cameraman image with <code>D<sub>x</sub></code> and <code>D<sub>y</sub></code> gives the partial
+                derivatives of the image in x and y. Combining them gives the gradient magnitude
+                <code>sqrt((&part;I/&part;x)&sup2; + (&part;I/&part;y)&sup2;)</code>.</p>
+<pre><code>cameraman_dx = scipy.signal.convolve2d(cameraman, DX)
+cameraman_dy = scipy.signal.convolve2d(cameraman, DY)
+cam_dx_mag = np.abs(cameraman_dx)[:,1:-1]   # crop 'full' output back to image size
+cam_dy_mag = np.abs(cameraman_dy)[1:-1,:]
+gradient_magnitude = np.sqrt(cam_dx_mag**2 + cam_dy_mag**2)</code></pre>
+            <div class="project-images quad">
+                <figure>
+                    <img src="images/proj2/part1/cameraman.png" alt="">
+                    <figcaption>Original cameraman</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/cam_dx_mag.png" alt="">
+                    <figcaption>|&part;I/&part;x|</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/cam_dy_mag.png" alt="">
+                    <figcaption>|&part;I/&part;y|</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/cam_grad_mag.png" alt="">
+                    <figcaption>Gradient magnitude</figcaption>
+                </figure>
+            </div>
+            <p>To turn the gradient magnitude into an edge image, I binarized it with a threshold of 50. Different thresholds
+                had different tradeoffs: values below 35 produced noise edges with blades of grass being prominent while
+                values above 50 missed many building edges.</p>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/part1/binned_magnitude_cameraman_35.jpg" alt="">
+                    <figcaption>Edges, threshold 35</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/binned_magnitude_cameraman_50.jpg" alt="">
+                    <figcaption>Edges, threshold 50 (chosen)</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <!-- ============================== PART 1.3 ============================== -->
+        <section class="project-section">
+            <h2>Part 1.3: Derivative of Gaussian (DoG) Filter</h2>
+            <p>The finite difference results are noisy, so I first smoothed the cameraman with a 2D Gaussian, made by taking the
+                outer product of a 1D Gaussian from <code>cv2.getGaussianKernel(9, 1)</code> with itself, and then computed the
+                gradient magnitude of the blurred image exactly as in Part 1.2.</p>
+<pre><code>gauss_2d = np.matmul(cv2.getGaussianKernel(9,1), cv2.getGaussianKernel(9, 1).T)
+blurred_cam = scipy.signal.convolve2d(cameraman, gauss_2d)
+blur_dx_mag = np.abs(scipy.signal.convolve2d(blurred_cam, DX))[:,1:-1]
+blur_dy_mag = np.abs(scipy.signal.convolve2d(blurred_cam, DY))[1:-1,:]
+blurred_grad_mag = np.sqrt(blur_dx_mag**2 + blur_dy_mag**2)</code></pre>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/part1/cam_blurred.png" alt="">
+                    <figcaption>Gaussian-blurred cameraman</figcaption>
+                </figure>
+            </div>
+
+            <h3>Comparison with the finite difference gradient</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/part1/binned_magnitude_cameraman_50.jpg" alt="">
+                    <figcaption>Finite difference gradient magnitude (Part 1.2), threshold 50</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/blurred_edges_cameraman_40.jpg" alt="">
+                    <figcaption>Blur, then gradient magnitude, threshold 40</figcaption>
+                </figure>
+            </div>
+            <p><strong>What differences do you see?</strong> Blurring first successfully removed the noisy edges coming from
+                the grass, while preserving the important edges of the cameraman and the camera. The Gaussian removes the
+                high-frequency texture before the derivative can amplify it, so the speckles that filled the bottom of the
+                finite difference result are almost completely gone. This also let me lower the threshold from 50 to 40
+                without picking up noise. The edges are thicker and smoother, and lines like the tripod legs and the
+                cameraman's outline are continuous instead of broken. The tradeoff is that some fine detail, like the faint
+                buildings in the background, fades away. The white frame around the border comes from the zero padding in
+                <code>convolve2d</code>, which creates an artificial edge where the image meets the black padding.</p>
+
+            <h3>Single convolution with DoG filters</h3>
+            <p>Since convolution is associative, <code>(I * G) * D<sub>x</sub> = I * (G * D<sub>x</sub>)</code>. So instead of
+                blurring and then differentiating, I can build the derivative of Gaussian filters once and convolve the
+                original image with them in a single step:</p>
+<pre><code>DoG_x = scipy.signal.convolve2d(gauss_2d, DX)
+DoG_y = scipy.signal.convolve2d(gauss_2d, DY)
+DoG_cam_x_1step = np.abs(scipy.signal.convolve2d(cameraman, DoG_x))[:,1:-1]
+DoG_cam_y_1step = np.abs(scipy.signal.convolve2d(cameraman, DoG_y))[1:-1,:]
+DoG_cam_mag_1step = np.sqrt(DoG_cam_x_1step**2 + DoG_cam_y_1step**2)</code></pre>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/part1/dog_filters.jpg" alt="">
+                    <figcaption>The DoG filters: a Gaussian with a positive lobe on one side and a negative lobe on the other</figcaption>
+                </figure>
+            </div>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/part1/blurred_edges_cameraman_40.jpg" alt="">
+                    <figcaption>Two convolutions (blur, then D<sub>x</sub>/D<sub>y</sub>), threshold 40</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/part1/cameraman_dog_mag_40.jpg" alt="">
+                    <figcaption>Single convolution with DoG filters, threshold 40</figcaption>
+                </figure>
+            </div>
+            <p>With the same threshold, the two edge images are identical. Comparing the gradient magnitudes directly,
+                the largest difference between <code>blurred_grad_mag</code> and <code>DoG_cam_mag_1step</code> is about
+                2&times;10<sup>&minus;13</sup>, which is just floating point error. This verifies that blurring then taking
+                derivatives gives the same result as convolving once with the DoG filters.</p>
+<pre><code>np.abs(blurred_grad_mag - DoG_cam_mag_1step).max()   # 2.13e-13</code></pre>
+        </section>
+
+        <!-- ============================== PART 2.1 ============================== -->
+        <section class="project-section">
+            <h2>Part 2.1: Image "Sharpening"</h2>
+            <p>A Gaussian blur is a low-pass filter, so subtracting the blurred image from the original leaves only the high
+                frequencies. Adding those high frequencies back (scaled by some amount &alpha;) makes the image look sharper:
+                <code>sharp = f + &alpha;(f &minus; f * g)</code>. Rearranging, this becomes a single convolution with the
+                <strong>unsharp mask filter</strong> <code>(1 + &alpha;)e &minus; &alpha;g</code>, where <code>e</code> is the
+                unit impulse.</p>
+<pre><code>sharpen_gauss = np.matmul(cv2.getGaussianKernel(13, 2), cv2.getGaussianKernel(13, 2).T)
+
+def unsharp_kernel(alpha):
+    kernel = np.zeros((13, 13))
+    kernel[6, 6] = 1 + alpha
+    kernel -= alpha * sharpen_gauss
+    return kernel
+
+def convolve_rgb(image, kernel):
+    return np.dstack([
+        scipy.signal.convolve2d(image[:, :, ch], kernel, mode='same', boundary='symm')
+        for ch in range(3)
+    ])
+
+sharp = np.clip(convolve_rgb(image, unsharp_kernel(2)), 0, 1)</code></pre>
+            <p>I convolve each color channel separately with <code>boundary='symm'</code> so that the edges of the image don't
+                darken from zero padding, and clip the result back to [0, 1].</p>
+
+            <h3>Taj Mahal</h3>
+            <div class="project-images quad">
+                <figure>
+                    <img src="images/proj2/sharpen/taj_orig.jpg" alt="">
+                    <figcaption>Original</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/taj_blurred.jpg" alt="">
+                    <figcaption>Blurred (low frequencies)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/taj_high_freq.jpg" alt="">
+                    <figcaption>High frequencies (+0.5 so zero is gray)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/taj.jpg" alt="">
+                    <figcaption>Sharpened (&sigma; = 2, &alpha; = 2)</figcaption>
+                </figure>
+            </div>
+
+            <h3>Varying the sharpening amount</h3>
+            <div class="project-images quad">
+                <figure>
+                    <img src="images/proj2/sharpen/taj_alpha_0.5.jpg" alt="">
+                    <figcaption>&alpha; = 0.5</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/taj_alpha_1.jpg" alt="">
+                    <figcaption>&alpha; = 1</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/taj_alpha_2.jpg" alt="">
+                    <figcaption>&alpha; = 2</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/taj_alpha_5.jpg" alt="">
+                    <figcaption>&alpha; = 5</figcaption>
+                </figure>
+            </div>
+            <p>Small values of &alpha; make the details on the dome and arches slightly crisper. As &alpha; grows, edges get
+                more contrast, but by &alpha; = 5 the image is oversharpened: bright halos appear around the building, the sky
+                becomes grainy, and JPEG artifacts get amplified along with the real detail. &alpha; = 2 was a good middle
+                ground, so I used it for the rest of my examples.</p>
+
+            <h3>More examples</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/sharpen/babycat_orig.jpg" alt="">
+                    <figcaption>Baby cat &mdash; original</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/babycat.jpg" alt="">
+                    <figcaption>Baby cat &mdash; sharpened</figcaption>
+                </figure>
+            </div>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/sharpen/cat2_orig.jpg" alt="">
+                    <figcaption>Cat &mdash; original</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/cat2.jpg" alt="">
+                    <figcaption>Cat &mdash; sharpened</figcaption>
+                </figure>
+            </div>
+            <p>Sharpening helps most on images that are only slightly soft, like the cats' fur and whiskers. It can't recover
+                detail that was never captured, though: the babycat photo is still pretty blurry.</p>
+
+            <h3>Blur, then resharpen</h3>
+            <p>To test how much sharpening can actually recover, I blurred a sharp photo of myself with the same Gaussian and
+                then sharpened the blurry version with &alpha; = 2.</p>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj2/sharpen/portrait_original.jpg" alt="">
+                    <figcaption>Original</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/portrait_blurred.jpg" alt="">
+                    <figcaption>Blurred</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/sharpen/portrait_resharpened.jpg" alt="">
+                    <figcaption>Resharpened (&alpha; = 2)</figcaption>
+                </figure>
+            </div>
+            <p>The resharpened image looks much crisper than the blurred one, and strong edges like my hairline, eyes, and the
+                outline of my face come back. However, it doesn't match the original. The finest details, like individual
+                strands of hair and skin texture, were removed by the blur, so there is nothing left to amplify. Instead, the
+                edges that remain are exaggerated, which gives the image a slightly artificial look. Sharpening only boosts
+                the high frequencies still in the image; it can't restore frequencies that were filtered out.</p>
+        </section>
+
+        <!-- ============================== PART 2.2 ============================== -->
+        <section class="project-section">
+            <h2>Part 2.2: Hybrid Images</h2>
+            <p>A hybrid image combines the low frequencies of one image with the high frequencies of another. Up close, the
+                high frequencies dominate, but from far away only the low frequencies are visible. After aligning the two
+                images on two points I click in each, I low-pass the first image with a Gaussian of standard deviation
+                <code>sigma1</code>, high-pass the second by subtracting its own Gaussian blur (<code>sigma2</code>), and add
+                them together.</p>
+<pre><code>def hybrid_image(im1, im2, sigma1, sigma2):
+    low_freq = sk.filters.gaussian(im1, sigma=sigma1, channel_axis=-1)
+    low_freq_im2 = sk.filters.gaussian(im2, sigma=sigma2, channel_axis=-1)
+    high_freq = im2 - low_freq_im2
+    return low_freq + high_freq</code></pre>
+
+            <h3>Teemo + Rat</h3>
+            <p>For my favorite result, Teemo is the low-frequency image (&sigma;<sub>1</sub> = 6) and a rat is the
+                high-frequency image (&sigma;<sub>2</sub> = 5).</p>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/hybrid/in_Teemo.jpg" alt="">
+                    <figcaption>Input: Teemo (low frequency)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/in_rat.jpg" alt="">
+                    <figcaption>Input: rat (high frequency)</figcaption>
+                </figure>
+            </div>
+            <p>I aligned the two images by clicking two corresponding points in each. The alignment rotates and scales the rat to match Teemo,
+                which leaves black padding in the corners.</p>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/hybrid/teemo_aligned.jpg" alt="">
+                    <figcaption>Aligned Teemo</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/rat_aligned.jpg" alt="">
+                    <figcaption>Aligned rat</figcaption>
+                </figure>
+            </div>
+            <p>Below are the log magnitude Fourier transforms at each step. The low-pass filter keeps only the center of
+                Teemo's spectrum, while the high-pass filter suppresses the center of the rat's spectrum and leaves the outer
+                region. The hybrid's spectrum contains both.</p>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/hybrid/teemo_fft.jpg" alt="">
+                    <figcaption>FFT of aligned Teemo</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/rat_fft.jpg" alt="">
+                    <figcaption>FFT of aligned rat</figcaption>
+                </figure>
+            </div>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/hybrid/teemo_low_freq.jpg" alt="">
+                    <figcaption>Low-passed Teemo (&sigma; = 6)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/rat_high_freq.jpg" alt="">
+                    <figcaption>High-passed rat (&sigma; = 5)</figcaption>
+                </figure>
+            </div>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/hybrid/teemo_low_fft.jpg" alt="">
+                    <figcaption>FFT of low-passed Teemo</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/rat_high_fft.jpg" alt="">
+                    <figcaption>FFT of high-passed rat</figcaption>
+                </figure>
+            </div>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj2/hybrid/teemo_rat.jpg" alt="">
+                    <figcaption>Hybrid: Teemo + rat</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/teemo_rat_fft.jpg" alt="">
+                    <figcaption>FFT of hybrid</figcaption>
+                </figure>
+            </div>
+            <p><strong>Choosing the cutoffs.</strong> Cutoffs were chosen using trial and error to achieve the desired visual effect.</p>
+
+            <h3>Derek + Nutmeg</h3>
+            <p>Derek is low-passed with &sigma;<sub>1</sub> = 13 and Nutmeg is high-passed with &sigma;<sub>2</sub> = 12.</p>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj2/hybrid/in_derek.jpg" alt="">
+                    <figcaption>Derek (low frequency)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/in_nutmeg.jpg" alt="">
+                    <figcaption>Nutmeg (high frequency)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/derek_nutmeg.jpg" alt="">
+                    <figcaption>Hybrid</figcaption>
+                </figure>
+            </div>
+
+            <h3>Gator + Cat</h3>
+            <p>The gator is low-passed with &sigma;<sub>1</sub> = 6 and the cat is high-passed with &sigma;<sub>2</sub> = 3.</p>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj2/hybrid/in_gator.jpg" alt="">
+                    <figcaption>Gator (low frequency)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/in_cat.jpg" alt="">
+                    <figcaption>Cat (high frequency)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/hybrid/gator_cat.jpg" alt="">
+                    <figcaption>Hybrid</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <!-- ============================== PART 2.3 ============================== -->
+        <section class="project-section">
+            <h2>Part 2.3: Gaussian and Laplacian Stacks</h2>
+            <p>Each level
+                of the Gaussian stack here blurs the original with a Gaussian whose &sigma; doubles every level (2, 4, 8, 16). Each
+                level of the Laplacian stack is the difference between consecutive Gaussian levels, and the final level is the
+                last Gaussian level itself, so summing the whole Laplacian stack gives back the original image.</p>
+<pre><code>def gaussian_stack(image, num_levels=5, sigma=2):
+    stack = [image]
+    for i in range(1, num_levels):
+        blurred = sk.filters.gaussian(image, sigma=sigma * (2 ** (i - 1)), channel_axis=-1)
+        stack.append(blurred)
+    return stack
+
+def laplacian_stack(image, num_levels=5, sigma=2):
+    gaussian = gaussian_stack(image, num_levels, sigma)
+    laplacian = []
+    for i in range(num_levels - 1):
+        laplacian.append(gaussian[i] - gaussian[i + 1])
+    laplacian.append(gaussian[-1])  # final low-frequency residual
+    return laplacian</code></pre>
+            <p>For display, the Laplacian levels are normalized to [0, 1] since they contain negative values.</p>
+
+            <h3>Apple</h3>
+            <div class="project-images five">
+                <figure><img src="images/proj2/spline/apple_gauss_0.jpg" alt=""><figcaption>G0</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_gauss_1.jpg" alt=""><figcaption>G1</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_gauss_2.jpg" alt=""><figcaption>G2</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_gauss_3.jpg" alt=""><figcaption>G3</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_gauss_4.jpg" alt=""><figcaption>G4</figcaption></figure>
+            </div>
+            <div class="project-images five">
+                <figure><img src="images/proj2/spline/apple_laplacian_0.jpg" alt=""><figcaption>L0</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_laplacian_1.jpg" alt=""><figcaption>L1</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_laplacian_2.jpg" alt=""><figcaption>L2</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_laplacian_3.jpg" alt=""><figcaption>L3</figcaption></figure>
+                <figure><img src="images/proj2/spline/apple_laplacian_4.jpg" alt=""><figcaption>L4</figcaption></figure>
+            </div>
+
+            <h3>Orange</h3>
+            <div class="project-images five">
+                <figure><img src="images/proj2/spline/orange_gauss_0.jpg" alt=""><figcaption>G0</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_gauss_1.jpg" alt=""><figcaption>G1</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_gauss_2.jpg" alt=""><figcaption>G2</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_gauss_3.jpg" alt=""><figcaption>G3</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_gauss_4.jpg" alt=""><figcaption>G4</figcaption></figure>
+            </div>
+            <div class="project-images five">
+                <figure><img src="images/proj2/spline/orange_laplacian_0.jpg" alt=""><figcaption>L0</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_laplacian_1.jpg" alt=""><figcaption>L1</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_laplacian_2.jpg" alt=""><figcaption>L2</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_laplacian_3.jpg" alt=""><figcaption>L3</figcaption></figure>
+                <figure><img src="images/proj2/spline/orange_laplacian_4.jpg" alt=""><figcaption>L4</figcaption></figure>
+            </div>
+        </section>
+
+        <!-- ============================== PART 2.4 ============================== -->
+        <section class="project-section">
+            <h2>Part 2.4: Multiresolution Blending</h2>
+            <p>To blend two images, I build a Laplacian stack for each and a Gaussian stack for the mask. At each level, the
+                blurred mask weights the first image's Laplacian and one minus the mask weights the second's. Summing the
+                combined levels gives the final blend. Because the mask gets blurrier at lower frequencies, coarse features are
+                blended over a wide seam while fine details are blended over a narrow one, which hides the seam.</p>
+<pre><code>gauss_mask = gaussian_stack(mask)
+combined = []
+for i in range(5):
+    combined.append(gauss_mask[i] * laplacian_apple[i]
+                    + (1 - gauss_mask[i]) * laplacian_orange[i])
+blended = np.clip(np.sum(combined, axis=0), 0, 1)</code></pre>
+
+            <h3>The Oraple</h3>
+            <p>Using a vertical step mask (left half = 1), the apple and orange blend into the classic oraple.</p>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj2/spline/apple.jpeg" alt="">
+                    <figcaption>Apple</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/spline/orange.jpeg" alt="">
+                    <figcaption>Orange</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/blend/oraple.jpg" alt="">
+                    <figcaption>Oraple</figcaption>
+                </figure>
+            </div>
+            <p>The figure below recreates Figure 3.42 from Szeliski: each row is a level of the stack, with the masked apple on
+                the left, the masked orange in the middle, and their sum on the right. The last row sums every level.</p>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/blend/oraple_stack.jpg" alt="">
+                    <figcaption>Masked Laplacian stacks for the oraple</figcaption>
+                </figure>
+            </div>
+
+            <h3>Jersey Swap: LeBron in a Spurs Jersey</h3>
+            <p>For an irregular mask, I put De'Aaron Fox's Spurs jersey on LeBron. I aligned the two photos with the same
+                two-point alignment from the hybrid images, then built the jersey mask automatically in HSV space: pixels with
+                a blue hue and enough saturation are kept, small holes are filled with morphological closing, and only the
+                largest connected region is kept. I click once on LeBron's waist to cut the mask off below the jersey, then
+                dilate it slightly so the blend covers the whole jersey.</p>
+<pre><code>hsv = sk.color.rgb2hsv(image)
+h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+mask = (h &gt; 0.55) &amp; (h &lt; 0.72) &amp; (s &gt; 0.35) &amp; (v &gt; 0.15)
+mask = ndi.binary_closing(mask, iterations=4)
+mask = ndi.binary_fill_holes(mask)
+labels, n = ndi.label(mask)
+sizes = ndi.sum(mask, labels, range(1, n + 1))
+mask = labels == (np.argmax(sizes) + 1)</code></pre>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj2/blend/lebron_aligned.png" alt="">
+                    <figcaption>LeBron (aligned)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/blend/fox_aligned.png" alt="">
+                    <figcaption>Fox (aligned)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/blend/jersey_mask.png" alt="">
+                    <figcaption>Jersey mask</figcaption>
+                </figure>
+            </div>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/blend/jersey_swap.jpg" alt="">
+                    <figcaption>Result: LeBron in a Spurs jersey</figcaption>
+                </figure>
+            </div>
+            <p>The Laplacian stacks of the masked inputs for this blend:</p>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/blend/lebron_stack.jpg" alt="">
+                    <figcaption>Left: masked Fox, middle: masked LeBron, right: combined</figcaption>
+                </figure>
+            </div>
+
+            <h3>Ball Swap: A Soccer Ball Through the Hoop</h3>
+            <p>For my second custom blend, I replaced the basketball going through a hoop with a soccer ball. I utilized the starter
+                code's align method to warp the soccer ball into the basketball's position. The mask was created afterwards by clicking on the left and right edges of the basketball.</p>
+            <p>The same two clicks on the basketball also define the mask: their midpoint is the center of a circle, and half
+                the distance between them is its radius.</p>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj2/blend/basketball_aligned.png" alt="">
+                    <figcaption>Basketball</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/blend/soccerball_aligned.png" alt="">
+                    <figcaption>Soccer ball (warped to match)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj2/blend/ball_mask.png" alt="">
+                    <figcaption>Circular mask</figcaption>
+                </figure>
+            </div>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/blend/ball_swap.jpg" alt="">
+                    <figcaption>Result: a soccer ball through the hoop</figcaption>
+                </figure>
+            </div>
+            <div class="project-images narrow">
+                <figure>
+                    <img src="images/proj2/blend/ball_stack.jpg" alt="">
+                    <figcaption>Left: masked soccer ball, middle: masked basketball, right: combined</figcaption>
+                </figure>
+            </div>
+            <p>The blurred mask at the coarse levels softens the transition so the ball's edge picks up some of the
+                background's lighting. One limitation is that in the original photo, some of the net's strings pass in front
+                of the basketball. Since the mask is a solid circle, the soccer ball covers those strings, so the ball looks
+                like it sits slightly in front of the net instead of inside it.</p>
+        </section>
+
+        <section class="project-section">
+            <h2>Takeaways</h2>
+            <p> One of the key things that I learned from this project was the importance of image processing via code before
+                trying to create composite images or make some form of analysis. A lot of time was spent tweaking different 
+                normalization methods, threshold, and filters to get the expected results. Additionally, I learned a ton 
+                about the impact of gaussian blurring and how it can be used in practice.
+            </p>
+        </section>
     </div>
 </div>
 

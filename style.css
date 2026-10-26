@@ -511,6 +511,14 @@ nav .fa-solid{
 .project-images.narrow{
     width: 50%;
 }
+.project-images.full{
+    grid-template-columns: 1fr;
+    width: 100%;
+    margin-bottom: 30px;
+}
+.project-images.pixel img{
+    image-rendering: pixelated;
+}
 /* Pages with many tall images: cap height so portrait-shaped images don't dominate */
 .capped .project-images img{
     width: auto;

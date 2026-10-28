@@ -22,10 +22,359 @@
 </div>
 
 <div id="cs180-content">
-    <div class="container">
+    <div class="container capped">
         <a href="cs180.html" class="btn">&larr; Back to Projects</a>
-        <h1 class="sub-title">Project 4: Title Here</h1>
-        <p class="intro">Coming soon.</p>
+        <h1 class="sub-title">Project 4: Image Warping and Mosaicing</h1>
+
+        <section class="project-section">
+            <h2>Overview</h2>
+            <p>In this project, we created mosaics of multiple images to create a panamoric like view of the scene.
+                To do so, we used image projection techniques after picking corresponding points in both images.</p>
+        </section>
+
+        <!-- ============================== A.1 ============================== -->
+        <section class="project-section">
+            <h2>A.1: Shoot the Pictures</h2>
+            <p>These were the sets of images that I used.</p>
+
+            <h3>Hearst Memorial Mining Building</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj4/src/hearst2.jpg" alt="">
+                    <figcaption>Front</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/hearst5.jpg" alt="">
+                    <figcaption>Right</figcaption>
+                </figure>
+            </div>
+
+            <h3>Beach at Sunset</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj4/src/beachleft.jpg" alt="">
+                    <figcaption>Left</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/beachright.jpg" alt="">
+                    <figcaption>Right</figcaption>
+                </figure>
+            </div>
+
+            <h3>Foothill Pavilion</h3>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj4/src/foothill_left.jpg" alt="">
+                    <figcaption>Left</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/foothill_mid.jpg" alt="">
+                    <figcaption>Center</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/foothill_right.jpg" alt="">
+                    <figcaption>Right</figcaption>
+                </figure>
+            </div>
+
+            <h3>Rectification Targets</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj4/src/torectify.jpg" alt="">
+                    <figcaption>Whiteboard at Moffitt, right before the deadline...</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/torectify2.jpg" alt="">
+                    <figcaption>Moffitt Library evacuation map</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <!-- ============================== A.2 ============================== -->
+        <section class="project-section">
+            <h2>A.2: Recover Homographies</h2>
+            <p>As seen in class and specified by the project specifications, the homography is computed using the following function. 
+                In essence, we are creating a system of linear equations from the points we clicked in both images (with each point 
+                contributing two equations to the system). However, since the SoE is overdetermined, we use least squares to find a
+                solution.
+            </p>
+<pre><code>def computeH(im1_pts, im2_pts):
+    src_normalizer, dst_normalizer = normalization_matrix(src), normalization_matrix(dst)
+    A, b = build_system(apply_H(src_normalizer, src), apply_H(dst_normalizer, dst))
+    h, *_ = np.linalg.lstsq(A, b, rcond=None)
+    H_normalized = np.append(h, 1.0).reshape(3, 3)
+    H = np.linalg.inv(dst_normalizer) @ H_normalized @ src_normalizer
+    return H / abs(H[2, 2])</code></pre>
+
+            <h3>Point Correspondences</h3>
+            <p>Correspondences were picked manually.</p>
+            <div class="project-images full">
+                <figure>
+                    <img src="images/proj4/hearst_pts_1_0.jpg" alt="">
+                    <figcaption>Hearst</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/beach_pts_0_1.jpg" alt="">
+                    <figcaption>Beach</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/foothill_pts_0_1.jpg" alt="">
+                    <figcaption>Foothill: Left and Middle</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/foothill_pts_2_1.jpg" alt="">
+                    <figcaption>Foothill: Right and Middle</figcaption>
+                </figure>
+            </div>
+
+            <h3>Example System of Equations</h3>
+            <p>For the whiteboard rectification, the 4 clicked corners map to the corners of a 600 &times; 750 rectangle, giving
+                an exact 8 &times; 8 system:</p>
+<pre><code>A =
+[[  641.56  1001.20  1     0       0        0       0           0        ]
+ [    0        0     0   641.56  1001.20    1       0           0        ]
+ [ 1444.31   799.85  1     0       0        0   -865140.76  -479112.48   ]
+ [    0        0     0  1444.31   799.85    1       0           0        ]
+ [ 1444.31  1849.00  1     0       0        0   -865140.76  -1107549.06  ]
+ [    0        0     0  1444.31  1849.00    1   -1081787.02 -1384898.57  ]
+ [  641.56  1671.49  1     0       0        0       0           0        ]
+ [    0        0     0   641.56  1671.49    1   -480524.84  -1251946.20  ]]
+
+b = [ 0  0  599  0  599  749  0  749 ]
+
+H =
+[[ 2.1302   0.0000  -1366.6255 ]
+ [ 0.5112   2.0381  -2368.4810 ]
+ [ 0.0013   0.0000      1.0000 ]]</code></pre>
+
+            <h3>Recovered Homographies</h3>
+            <p>The homographies recovered from the system of equations is shown below.</p>
+<pre><code>Hearst right &rarr; front
+[[  -0.2786    0.0086   500.5567 ]
+ [  -0.8906    0.5951   177.4197 ]
+ [  -0.0015   -0.0002     1.0000 ]]
+
+Beach left &rarr; right
+[[   1.3874   -0.0729  -1259.8692 ]
+ [   0.1948    1.2219   -547.9738 ]
+ [   0.0001    0.0000      1.0000 ]]
+
+Foothill left &rarr; center
+[[   1.4893   -0.0495  -382.6963 ]
+ [   0.4153    1.5398  -354.1300 ]
+ [   0.0006    0.0004     1.0000 ]]
+
+Foothill right &rarr; center
+[[   0.1129    0.0320   353.9778 ]
+ [  -0.1282    0.2180   118.4740 ]
+ [  -0.0002    0.0000     1.0000 ]]</code></pre>
+            <p>Due to iPhone camera features, some of the images were taken at different resolutions, resulting in 
+                different scales even for the same landscapes (e.g. Foothill photos).
+            </p>
+        </section>
+
+        <!-- ============================== A.3 ============================== -->
+        <section class="project-section">
+            <h2>A.3: Warp the Images</h2>
+            <p>To warp images, I used the homography matrices to generate the transformed images via inverse mapping. 
+                This was achieved by first mapping the borders of the image to see the output bounding box before then mapping every
+                pixel of the output image to its pixel value from the original image using the inverse homography. To methods were 
+                used for sampling and were implemented from scratch as described in class: nearest neighbor and bilinear interpolation.
+            </p>
+<pre><code>def sample_bilinear(image, src_x, src_y):
+    left, top = floor(src_x), floor(src_y)
+    wx, wy = src_x - left, src_y - top
+    top_row    = (1 - wx) * image[top, left]    + wx * image[top, left + 1]
+    bottom_row = (1 - wx) * image[top+1, left]  + wx * image[top+1, left + 1]
+    return (1 - wy) * top_row + wy * bottom_row</code></pre>
+
+            <h3>Rectification</h3>
+            <p>To rectify rectangular objects taken at an angle, I clicked the four corners of the object and found the 
+                homography that maps the points into a rectangle. Then, the above image warping techniques were used to generate the
+                fixed image.
+            </p>
+            <div class="project-images triple stack">
+                <figure>
+                    <img src="images/proj4/whiteboard_pts.jpg" alt="">
+                    <figcaption>Clicked whiteboard corners</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/whiteboard_nn.jpg" alt="">
+                    <figcaption>Rectified, nearest neighbor</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/whiteboard_bilinear.jpg" alt="">
+                    <figcaption>Rectified, bilinear</figcaption>
+                </figure>
+            </div>
+            <div class="project-images triple stack">
+                <figure>
+                    <img src="images/proj4/evacuation_map_pts.jpg" alt="">
+                    <figcaption>Clicked evacuation map corners</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/evacuation_map_nn.jpg" alt="">
+                    <figcaption>Rectified, nearest neighbor</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/evacuation_map_bilinear.jpg" alt="">
+                    <figcaption>Rectified, bilinear</figcaption>
+                </figure>
+            </div>
+
+            <h3>Nearest Neighbor vs. Bilinear</h3>
+            <div class="project-images full">
+                <figure>
+                    <img src="images/proj4/whiteboard_compare.jpg" alt="">
+                    <figcaption>Whiteboard close-up</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/evacuation_map_compare.jpg" alt="">
+                    <figcaption>Evacuation map close-up</figcaption>
+                </figure>
+            </div>
+            <p>At a glance the two look almost identical, but zoomed in nearest neighbor produces jagged, aliased edges.
+                This is because neighboring output pixels are not necessarily 1-1 bijections to the source pixels, creating aliasing.
+                Bilinear gives smoother edges but results in some blurring.</p>
+            <table class="results-table">
+                <tr><th>Image</th><th>Nearest neighbor</th><th>Bilinear</th></tr>
+                <tr><td>Whiteboard</td><td>0.31 s</td><td>0.77 s</td></tr>
+                <tr><td>Evacuation map</td><td>0.15 s</td><td>0.38 s</td></tr>
+            </table>
+            <p>Bilinear is noticeably slower though, which makes sense given the additional memory lookups and computations per pixel.</p>
+        </section>
+
+        <!-- ============================== A.4 ============================== -->
+        <section class="project-section">
+            <h2>A.4: Blend the Images into a Mosaic</h2>
+            <p>The procedure for each mosaic:</p>
+            <p>Each scene's images were first compared pairwise to generate homographies. These images were then warped and projected
+                onto a shared canvas that covers the union of all warped images. These were mapped using the inverse homographies. Finally,
+                 the images were blended together to form the final mosaic.</p>
+            <p>The following three blends were implemented:</p>
+            <ul>
+                <li><p><strong>Overwrite</strong>: later images simply paste over earlier ones. This has some noticeable seams.</p></li>
+                <li><p><strong>Feather</strong>: a weighted average using the distance-to-edge weights. No seam but ghosting for images
+                    with moving objects.</p></li>
+                <li><p><strong>Two-band (Laplacian)</strong>: used a laplacian pyramid with &sigma; = 8 just like we implemented in 
+                    previous projects. Only two bands were used as specified in the specs.</p></li>
+            </ul>
+
+            <h3>Blending Comparison</h3>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/hearst_blend_comparison.jpg" alt="">
+                    <figcaption>Hearst (2 images): overwrite, feather, and two-band, with overlap close-ups</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/beach_blend_comparison.jpg" alt="">
+                    <figcaption>Beach: overwrite, feather, and two-band, with overlap close-ups</figcaption>
+                </figure>
+            </div>
+            <p>In the Hearst close-up, overwrite leaves a visible diagonal seam through the doorway and column. Feathering hides
+                the seam but slightly blurs the window grilles where the two images disagree by a pixel or two. The laplacian blend
+                achieves results similar to the feathering approach, since there are no artifacts that would cause significant ghosting.
+                On the beach, overwrite shows a clear brightness step in the sky and keeps a lens flare from one shot. Feathering appears
+                blurrier due to the ghosting caused by the moving waves and sky, and the two-band blend removes it almost entirely and looks 
+                cleaner.</p>
+
+            <h3>Mosaic 1: Hearst Mining Building</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj4/src/hearst2.jpg" alt="">
+                    <figcaption>Front (reference)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/hearst5.jpg" alt="">
+                    <figcaption>Right</figcaption>
+                </figure>
+            </div>
+            <div class="project-images compare stack">
+                <figure>
+                    <img src="images/proj4/hearst_warped_0.jpg" alt="">
+                    <figcaption>Front, unwarped on the canvas</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/hearst_warped_1.jpg" alt="">
+                    <figcaption>Right, warped into the front view</figcaption>
+                </figure>
+            </div>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/hearst_mosaic.jpg" alt="">
+                    <figcaption>Hearst mosaic (two-band blend)</figcaption>
+                </figure>
+            </div>
+            <p>The the edges of the mosaic are heavily warped since the images were taken at vastly differnt angles but look seamless in the center.</p>
+
+            <h3>Mosaic 2: Beach at Sunset</h3>
+            <div class="project-images compare">
+                <figure>
+                    <img src="images/proj4/src/beachleft.jpg" alt="">
+                    <figcaption>Left (reference)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/beachright.jpg" alt="">
+                    <figcaption>Right</figcaption>
+                </figure>
+            </div>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/beach_mosaic.jpg" alt="">
+                    <figcaption>Beach mosaic (two-band blend)</figcaption>
+                </figure>
+            </div>
+
+            <h3>Mosaic 3: Foothill Pavilion</h3>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj4/src/foothill_left.jpg" alt="">
+                    <figcaption>Left</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/foothill_mid.jpg" alt="">
+                    <figcaption>Center (reference)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/src/foothill_right.jpg" alt="">
+                    <figcaption>Right</figcaption>
+                </figure>
+            </div>
+            <div class="project-images triple">
+                <figure>
+                    <img src="images/proj4/foothill_warped_0.jpg" alt="">
+                    <figcaption>Left, warped</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/foothill_warped_1.jpg" alt="">
+                    <figcaption>Center, unwarped</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/foothill_warped_2.jpg" alt="">
+                    <figcaption>Right, warped</figcaption>
+                </figure>
+            </div>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/foothill_mosaic.jpg" alt="">
+                    <figcaption>Foothill mosaic (two-band blend)</figcaption>
+                </figure>
+            </div>
+            <p>The beams in the foothill pavilion line up cleanly across both seams, which shows that the chained homographies
+                are consistent. The step in the bottom-left edge comes from the source frames having different extents, not from
+                misalignment. The outer images are noticeably stretched, which is expected for a planar projection with a wide
+                field of view.</p>
+        </section>
+
+        
+
+        <section class="project-section">
+            <h2>Takeaways</h2>
+            <p>The most surprising part was how much the point picking matters. A single sloppy click visibly bends a seam, and
+                adding a few extra well-spread points with least squares fixed more than any change to the blending did. I also
+                found that blending choices matter mostly for hiding exposure differences: the two-band blend handles both the
+                exposure step and small misalignments, where feathering trades one artifact for another.</p>
+        </section>
     </div>
 </div>
 

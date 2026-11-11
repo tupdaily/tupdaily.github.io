@@ -29,7 +29,8 @@
         <section class="project-section">
             <h2>Overview</h2>
             <p>In this project, we created mosaics of multiple images to create a panamoric like view of the scene.
-                To do so, we used image projection techniques after picking corresponding points in both images.</p>
+                To do so, we used image projection techniques after picking corresponding points in both images. In Part B, we
+                automated the point picking by detecting, describing, and matching features, then using RANSAC to find a robust homography.</p>
         </section>
 
         <!-- ============================== A.1 ============================== -->
@@ -366,7 +367,216 @@ Foothill right &rarr; center
                 field of view.</p>
         </section>
 
-        
+        <!-- ============================== Part B ============================== -->
+        <section class="project-section">
+            <h2>Part B: Feature Matching for Autostitching</h2>
+            <p>In this portion of the project, our goal was to achieve automatic panorama stitching in accordance
+                with the method described in the MOPS paper. The steps were implemented in the order of the article below.
+            </p>
+        </section>
+
+        <!-- ============================== B.1 ============================== -->
+        <section class="project-section">
+            <h2>B.1: Harris Corner Detection</h2>
+            <p>Harris corners were found using the provided starter code, with a minimum peak distance of 3 pixels and a relative
+                threshold of 10<sup>-3</sup> to throw away the thousands of weak, clustered responses. Despite this, we end up 
+                with a significant number of corners that are clustered.</p>
+            <p>To fix this, Adaptive Non-Maximal Suppression (ANMS) was implemented. For each corner, we compute its radius to the
+                nearest corner that is significantly stronger than it.
+                Keeping the 500 corners with the largest radii gave points that are both strong and spread out across the whole
+                image, which ensures our distribution of features is spread out across the image.</p>
+<pre><code>def anms(corners, h, num_points=500, c_robust=0.9):
+    strengths = h[corners[0], corners[1]]
+    D = dist2(pts, pts)
+    suppressed = strengths[:, None] &lt; c_robust * strengths[None, :]
+    D[~suppressed] = np.inf
+    radii = D.min(axis=1)
+    return corners[:, np.argsort(-radii)[:num_points]]</code></pre>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/partb/hearst2_harris_vs_anms.jpg" alt="">
+                    <figcaption>ANMS reduces the number of corners nicely.</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_right_harris_vs_anms.jpg" alt="">
+                </figure>
+            </div>
+            <p>Without ANMS, many of the corners are on the ground and steps, but this is spread out with the use of ANMS.</p>
+        </section>
+
+        <!-- ============================== B.2 ============================== -->
+        <section class="project-section">
+            <h2>B.2: Feature Descriptor Extraction</h2>
+            <p>For each ANMS corner, we took a 40 &times; 40 window around it and sampled an 8 &times; 8 grid every 5 pixels. Before sampling,
+                the image is blurred with a Gaussian (&sigma; = 2) to avoid aliasing. Each patch is then bias/gain
+                normalized so that matching is not thrown off by exposure differences between
+                shots. These descriptors are axis-aligned, so there is no rotation invariance.</p>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/partb/hearst2_features.jpg" alt="">
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_right_features.jpg" alt="">
+                </figure>
+            </div>
+        </section>
+
+        <!-- ============================== B.3 ============================== -->
+        <section class="project-section">
+            <h2>B.3: Feature Matching</h2>
+            <p>To match features between two images, we computed the SSD between every pair of descriptors and found each feature's
+                nearest and second nearest neighbor. Instead of thresholding the distance directly, we used Lowe's ratio test to compare
+                our match-score between the best and second best matches. This ensures that only distinct matches are kept. Most corners
+                had ratios close to 0 (meaning they weren't distinct matches) and only corners with ratios below 0.4 were kept.</p>
+    
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/partb/hearst1__hearst2_matches.jpg" alt="">
+                    <figcaption>Hearst: 117 matches</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/beachleft__beachright_matches.jpg" alt="">
+                    <figcaption>Beach: 253 matches</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_left__foothill_mid_matches.jpg" alt="">
+                    <figcaption>Foothill: 73 matches</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_mid__foothill_right_matches.jpg" alt="">
+                    <figcaption>Foothill: 22 matches</figcaption>
+                </figure>
+            </div>
+            <p>The majority of the lines are parallel, which is a good sign, but there are still a few clearly wrong matches crossing
+                the image. The second Foothill pair only gets 22 matches, since the right photo was taken at a different zoom
+                and much closer to the pillars, so the patches simply don't look the same at a single scale. Notably, for the second
+                foothill pair, even if points visually match, some of the lines are not parallel. This is expected to be due to the 
+                difference in distance from the camera for different points in the image.</p>
+        </section>
+
+        <!-- ============================== B.4 ============================== -->
+        <section class="project-section">
+            <h2>B.4: RANSAC for Robust Homography</h2>
+            <p>Since even a few bad matches can mess up our LS fit, we implemented 4-point RANSAC. Each iteration
+                picks 4 random matches, computes the exact homography using <code>computeH</code> from Part A, and counts how many of the other
+                matches land within 2 pixels of their partner. Samples where 3 of the 4 points are nearly collinear are skipped since
+                they give a degenerate homography. After the loop, the homography is refit with least squares on the largest set of
+                non-outliers. I also stop early once enough iterations have run to be 99.9% confident given the current non-outlier ratio.</p>
+<pre><code>def ransac_homography(pts1, pts2, n_iters=5000, eps=2.0):
+    best = np.zeros(len(pts1), dtype=bool)
+    for _ in range(n_iters):
+        idx = rng.choice(len(pts1), 4, replace=False)
+        if is_degenerate(pts1[idx]) or is_degenerate(pts2[idx]):
+            continue
+        H = computeH(pts1[idx], pts2[idx])
+        non-outliers = np.linalg.norm(apply_H(H, pts1) - pts2, axis=1) &lt; eps
+        if non-outliers.sum() &gt; best.sum():
+            best = non-outliers
+    return computeH(pts1[best], pts2[best]), best</code></pre>
+
+            <p>For the Hearst sequence, I took 5 photos sweeping from left to right. So, for that sequence homographies were
+                computed between adjacent shots and then chained together to reach the reference image. </p>
+            <div class="project-images compare stack">
+                <figure>
+                    <img src="images/proj4/partb/hearst1__hearst2_ransac.jpg" alt="">
+                    <figcaption>Hearst 1 &rarr; 2: 113 non-outliers / 33 rejected</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/hearst2__hearst3_ransac.jpg" alt="">
+                    <figcaption>Hearst 2 &rarr; 3: 17 non-outliers / 11 rejected</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/hearst3__hearst4_ransac.jpg" alt="">
+                    <figcaption>Hearst 3 &rarr; 4: 42 non-outliers / 17 rejected</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/hearst4__hearst5_ransac.jpg" alt="">
+                    <figcaption>Hearst 4 &rarr; 5: 52 non-outliers / 42 rejected</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/beachleft__beachright_ransac.jpg" alt="">
+                    <figcaption>Beach left &rarr; right: 195 non-outliers / 71 rejected</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_left__foothill_mid_ransac.jpg" alt="">
+                    <figcaption>Foothill left &rarr; center: 48 non-outliers / 47 rejected</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_mid__foothill_right_ransac.jpg" alt="">
+                    <figcaption>Foothill center &rarr; right: 10 non-outliers / 32 rejected</figcaption>
+                </figure>
+            </div>
+            <p>RANSAC does a good job of removing the crossing lines from the matching step. On the beach, almost all of the
+                non-outliers are on the sand, while most of the matches along the cliff, horizon, and sun get rejected. This makes sense
+                since all the points in the sand are in relatively the same plane, and there were many more corners in the sand. The one 
+                failure case is the second Foothill image: only 10 non-outliers survive, all on the bulletin board and the building behind 
+                it. These points are at a very different depth than the pillars, so the resulting homography aligns the background but not 
+                the foreground. We see this impacting the resulting mosaic.</p>
+
+            <h3>Manual vs. Automatic</h3>
+            <p>Below are the mosaics stitched with my hand-clicked correspondences from Part A (left) and with the automatic
+                pipeline (right). Both use the same two-band blending.</p>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/partb/hearst_manual_vs_auto.jpg" alt="">
+                    <figcaption>Hearst 2-image: manual vs. automatic</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/hearst_center_manual_vs_auto.jpg" alt="">
+                    <figcaption>Hearst 3-image</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/beach_manual_vs_auto.jpg" alt="">
+                    <figcaption>Beach</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_left_mid_manual_vs_auto.jpg" alt="">
+                    <figcaption>Foothill (left + center)/figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_manual_vs_auto.jpg" alt="">
+                    <figcaption>Foothill (all 3 images)</figcaption>
+                </figure>
+            </div>
+            <p>For the two-image Hearst mosaic, the results are practically identical, even though the automatic version goes
+                through a chain of three intermediate homographies. For the three-image Hearst mosaic, the automatic version is actually
+                better: my manual points left a visible kink in the stairs and the ground, while the automatic one lines the steps up
+                cleanly. This makes sense since RANSAC fits to dozens of points spread across the image, while I only clicked
+                6&ndash;8 points per pair by hand. The beach mosaics are nearly indistinguishable, which is a good sign since the sand gives RANSAC
+                almost 200 non-outliers to fit to.</p>
+            <p>Foothill is a different story. The left + center pair works well automatically, and the pillars and lamps line up
+                about as well as with the manual points. However, the full three-image Foothill mosaic fails on the right image
+                because of the bad center &rarr; right homography from above, where the pillars get sheared off to the side.
+                This was the one case where my manual points were noticeably better, since I could pick points on the pillars
+                themselves.</p>
+
+            <h3>Automatic Mosaics</h3>
+            <div class="project-images full stack">
+                <figure>
+                    <img src="images/proj4/partb/hearst_all_auto_mosaic.jpg" alt="">
+                    <figcaption>Hearst, all 5 images (centered on hearst3)</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/hearst_center_auto_mosaic.jpg" alt="">
+                    <figcaption>Hearst, 3 images</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/hearst_auto_mosaic.jpg" alt="">
+                    <figcaption>Hearst, front + right</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/beach_auto_mosaic.jpg" alt="">
+                    <figcaption>Beach at Sunset</figcaption>
+                </figure>
+                <figure>
+                    <img src="images/proj4/partb/foothill_left_mid_auto_mosaic.jpg" alt="">
+                    <figcaption>Foothill, left + center</figcaption>
+                </figure>
+            </div>
+            <p>The five-image Hearst mosaic is my favorite result, and it couldn't have been made in Part A since I never clicked points for
+                hearst1 and hearst4. The whole facade is captured head on, while the outer images are heavily stretched and blurred
+                as expected for such a wide field of view.</p>
+        </section>
 
         <section class="project-section">
             <h2>Takeaways</h2>
@@ -374,6 +584,10 @@ Foothill right &rarr; center
                 adding a few extra well-spread points with least squares fixed more than any change to the blending did. I also
                 found that blending choices matter mostly for hiding exposure differences: the two-band blend handles both the
                 exposure step and small misalignments, where feathering trades one artifact for another.</p>
+            <p>In Part B, the coolest part was how well RANSAC worked given how simple it is as well as the impact that images with varying
+                depths had on the results. Even with around half of the matched corners being wrong, it still found reasonably good homographies.
+                However, for the images where there were multiple depths, the use of RANSAC resulted in the discarding of corner points that 
+                corresponded to specific depths, resulting in distorted imaging.</p>
         </section>
     </div>
 </div>
